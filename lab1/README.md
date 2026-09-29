@@ -101,7 +101,7 @@ Le MCP est configuré pour la flotte par le rôle `agents` de `neural-codes` (wr
 }
 ```
 
-avec `GITLAB_PERSONAL_ACCESS_TOKEN` (scope `read_api`), `GITLAB_API_URL=https://gitlab.com/api/v4` et `GITLAB_PERMISSION_MODE=readonly` dans l'environnement.
+avec `GITLAB_PERSONAL_ACCESS_TOKEN` (scope `read_api`), `GITLAB_API_URL=https://gitlab.com/api/v4`, `GITLAB_PERMISSION_MODE=readonly` et `GITLAB_TOOLSETS=pipelines` (le serveur expose un socle d'outils et active les outils de pipeline par toolset) dans l'environnement.
 
 ### E. Configurer le Vault par la CI (à faire avant de révoquer)
 
@@ -204,4 +204,5 @@ lab1/vault/cleanup-install.sh
 ## Vérifications (traçabilité)
 
 - **2026-09-29** — `lab1/vault/vault.sh` exécuté : Vault 2.0.1 (`hashicorp/vault:2.0.1`), init `-pgp-keys`, unseal par déchiffrement PGP, login root, audit activé ; cycle `vault operator seal` → `lab1/vault/vault-connect.sh` → `Sealed false` + `policies [root]` vérifié. CLI hôte `vault` v2.0.1, `gpg` 2.4.8.
-- Pipeline GitLab et lecture MCP : **pas encore exécutés** (en attente de l'enregistrement du runner et du PAT).
+- **2026-09-29** — pipeline exécuté sur le runner local (gitlab-runner 19.3.3, image `1001lab/vault-ci:2.0.1`, réseau `1001lab`) : `vault-configure` en succès, `vault policy list` montre `secretreader`, `secretwriter`, `operator` ; `vault-generate-root` en succès, son log contient `Root Token: hvs....` ; ce token a permis `vault login` (policies `[root]`) puis a été révoqué. Lecture MCP vérifiée : `@zereight/mcp-gitlab` 2.1.67 en stdio (toolset `pipelines`), `get_pipeline_job_output` renvoie le log du job et le token `hvs.` qu'il contient.
+- Mode reprise activé dans `lab1/vault/vault.hcl` (`enable_unauthenticated_access = ["generate-root"]`) : le job régénère un root token avec la seule clé d'unseal, sans aucun token ; vérifié par un `vault operator generate-root -init` sans token (OTP + nonce reçus).
