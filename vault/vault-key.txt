@@ -1,0 +1,14 @@
+Unseal Key 1: wcDMAzF+GTrmDCtaAQwAreww88qI8zhNJYEr5OQokIvi7Q3RLqMIdpQfcJ1UMipaqmvMz3hTsBtWNqbtHUctCBQY34aNmq5I6EYhzZYcXZ4HS4cQL5bA0tps64oOon8SVVApMSp7oCHSv8j9FUel5sX7MAybRM6Z8HFP4SOhSqx0wjpXnvmWL4/bmetIQe+hvCkqTpSkWvQXWbS8BOV33aDjFKwH6PXnD58FrjsGtfxcIdgAJtbjTrMVD1tXFG1oqeYQN0oQ4W5PW8wLM+B24uy1DdlyenAa9XSbyprZ4QdHjLDxuo2IkXGune1td3CBm7O8WzEdPwtpjr3Y0eWO/fm+JKaCB650vSwSMIFbSu9LdGtreBt0Lng1di0vVJ8Ovzh3M8vPrIcb1E2Hj/f1C7ZTWuDvtIws5PsxiMmOKl3nQOJ3mah2rpYB8HcgN+OTsyBxNjoDzx26rE2kkgbtQR4vL5n2TqyUTma1WwhZ9yK376LJ7pEvwllSzoncPnlUNYELJ4NnM8NaUBvEvTOU0nEBjgNO6U1MJKVrLwALMlnbL66U6cG4AMRzXrDkqqaKF3EYNtDJ/f+e+57rL8no7z5+YSx/sqVz3mefJrfmG6DcivwdX50wJZTBXq9E4oO2WXzvQsa9o7x0iOqSGlKXm2dphyWc6g5cdNeoTtuofp5Ktg==
+
+Initial Root Token: hvs.H9ZlWwiV5sFd1vdr5L5w2HrX
+
+Vault initialized with 1 key shares and a key threshold of 1. Please securely
+distribute the key shares printed above. When the Vault is re-sealed,
+restarted, or stopped, you must supply at least 1 of these keys to unseal it
+before it can start servicing requests.
+
+Vault does not store the generated root key. Without at least 1 keys to
+reconstruct the root key, Vault will remain permanently sealed!
+
+It is possible to generate new unseal keys, provided you have a quorum of
+existing unseal keys shares. See "vault operator rekey" for more information.

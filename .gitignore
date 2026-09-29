@@ -1,2 +1,13 @@
-bao/bao01*
+# État runtime du lab — jamais committé
 vault/vault01*
+vault/vault-init.txt
+bao/bao01*
+bao/bao-key.txt
+bao/bao-init.txt
+
+# Clé privée du lab — détenue par l'opérateur, jamais committée
+pgp/lab-secret.b64
+pgp/gnupg/
+
+# Divers
+*.log

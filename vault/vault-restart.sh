@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
+#
+# Redémarre les conteneurs du lab puis unseal + login root.
+set -euo pipefail
 
-export ROOT_DIR_PATH=$(dirname $(realpath "$0"))
+ROOT_DIR_PATH="$(dirname "$(realpath "$0")")"
+REPO_DIR_PATH="$(dirname "$ROOT_DIR_PATH")"
+KEY_FILE="$ROOT_DIR_PATH/vault-key.txt"
 
-export FILE="$ROOT_DIR_PATH/vault-init.txt"
+export VAULT_ADDR='http://127.0.0.1:8200'
+export GNUPGHOME="$REPO_DIR_PATH/pgp/gnupg"
 
-if [ ! -f "$FILE" ]; then
-    echo "$FILE does not exists."
-    exit $1
+if [ ! -f "$KEY_FILE" ]; then
+    echo "$KEY_FILE absent — lancer vault.sh d'abord."
+    exit 1
 fi
 
+docker network create 1001lab >/dev/null 2>&1 || true
 
-export VAULT_ADDR='http://127.0.0.1:8200' 
+docker container start server01
+docker container start postgres
 
-docker network create pg
+sleep 5
 
-docker container run --network pg  --cap-add IPC_LOCK --name server01 -d -p 8200:8200 -v $ROOT_DIR_PATH/vault.hcl:/vault/config/vault.hcl -v $ROOT_DIR_PATH/vault01/file:/vault/file hashicorp/vault:1.16.2 vault server -config=/vault/config/vault.hcl
-
-docker container run --network pg -d --name postgres -e POSTGRES_PASSWORD="password" postgres
-
-docker network connect pg server01
-docker network connect pg postgres
-
-
-vault operator unseal $(grep 'Key 1:' $ROOT_DIR_PATH/vault-init.txt | awk '{print $NF}')
+vault operator unseal "$(grep 'Key 1:' "$KEY_FILE" | awk '{print $NF}' | base64 --decode | gpg -dq)" || true
 
 sleep 2
 
-vault login $(grep 'Initial Root Token:' $ROOT_DIR_PATH/vault-init.txt | awk '{print $NF}')
+vault login "$(grep 'Initial Root Token:' "$KEY_FILE" | awk '{print $NF}')"

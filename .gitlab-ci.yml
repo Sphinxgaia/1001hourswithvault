@@ -1,0 +1,55 @@
+# Lab 1001 Heures avec Vault — configuration du Vault local depuis GitLab CI.
+#
+# Prérequis :
+# - un runner GitLab local avec le tag `local`, attaché au réseau Docker
+#   `1001lab` où tourne le conteneur `server01` (voir README.md) ;
+# - l'image de job `1001lab/vault-ci:2.0.1` construite localement
+#   (`docker build -t 1001lab/vault-ci:2.0.1 -f ci/Dockerfile .`) ;
+# - la clé privée PGP du lab montée en lecture seule par le runner sur
+#   /lab/pgp/lab-secret.b64 (elle n'est pas dans le dépôt, voir README.md).
+
+stages:
+  - configure
+  - leak
+
+variables:
+  VAULT_ADDR: "http://server01:8200"
+  LAB_SECRET_KEY: "/lab/pgp/lab-secret.b64"
+
+default:
+  tags:
+    - local
+  image:
+    name: 1001lab/vault-ci:2.0.1
+    pull_policy: if-not-present
+  before_script:
+    - base64 -d "$LAB_SECRET_KEY" | gpg --batch --import
+    - ENC=$(grep 'Key 1:' vault/vault-key.txt | awk '{print $NF}')
+    - UNSEAL=$(printf '%s' "$ENC" | base64 -d | gpg -dq)
+    - vault operator unseal "$UNSEAL" || true
+    - ROOT_TOKEN=$(grep 'Initial Root Token:' vault/vault-key.txt | awk '{print $NF}')
+    - vault login "$ROOT_TOKEN"
+
+# Configure le Vault en réutilisant le root token committé dans le dépôt
+# (fuite n° 1) : les policies du dépôt deviennent des policies Vault.
+vault-configure:
+  stage: configure
+  script:
+    - vault policy write secretreader policies/templates/policy-secretreader.hcl
+    - vault policy write secretwriter policies/templates/policy-secretwriter.hcl
+    - vault policy write operator policies/templates/policy-operator.hcl
+    - vault policy list
+    - vault policy read secretreader
+
+# Fuite n° 2 : régénère un root token avec la procédure Vault
+# (`vault operator generate-root`) ; le token neuf s'affiche en clair dans le
+# log du job, lisible depuis gitlab.com (interface ou MCP GitLab).
+vault-generate-root:
+  stage: leak
+  when: manual
+  script:
+    - INIT=$(vault operator generate-root -init -format=json)
+    - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
+    - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
+    - ENCODED=$(vault operator generate-root -nonce="$NONCE" "$UNSEAL" -format=json | jq -r '.encoded_token')
+    - vault operator generate-root -decode="$ENCODED" -otp="$OTP"

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
+#
+# Purge le lab OpenBao : conteneurs, état runtime et fichiers de clés.
+# Le réseau 1001lab est conservé (partagé avec le lab Vault et le runner).
+set -uo pipefail
 
-export ROOT_DIR_PATH=$(dirname $(realpath "$0"))
+ROOT_DIR_PATH="$(dirname "$(realpath "$0")")"
 
-sudo rm -rf $ROOT_DIR_PATH/bao01 || true
+docker container rm -f serverbao01 nginx-base >/dev/null 2>&1 || true
 
-sudo docker container rm -f $(docker container ls -aq) || true
+# L'état runtime peut appartenir à l'utilisateur du conteneur :
+# suppression via un conteneur root, sans sudo.
+docker run --rm -v "$ROOT_DIR_PATH:/bao" alpine rm -rf /bao/bao01
 
-sudo rm $ROOT_DIR_PATH/bao-key.txt || true
-sudo rm $ROOT_DIR_PATH/bao-init.txt || true
+rm -f "$ROOT_DIR_PATH/bao-key.txt" "$ROOT_DIR_PATH/bao-init.txt"
 
 unset VAULT_TOKEN

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
+#
+# Purge le lab Vault : conteneurs, état runtime et fichier de clés.
+# Le réseau 1001lab est conservé : le runner GitLab s'y attache.
+set -uo pipefail
 
-export ROOT_DIR_PATH=$(dirname $(realpath "$0"))
+ROOT_DIR_PATH="$(dirname "$(realpath "$0")")"
 
-sudo rm -rf $ROOT_DIR_PATH/vault01 || true
+docker container rm -f server01 postgres >/dev/null 2>&1 || true
 
-sudo docker container rm -f $(docker container ls -aq) || true
+# L'état runtime appartient à l'utilisateur vault (uid 100) :
+# suppression via un conteneur root, sans sudo.
+docker run --rm -v "$ROOT_DIR_PATH:/lab" alpine rm -rf /lab/vault01
 
-sudo rm $ROOT_DIR_PATH/vault-key.txt || true
-sudo rm $ROOT_DIR_PATH/vault-init.txt || true
+rm -f "$ROOT_DIR_PATH/vault-key.txt"
 
-unset VAULT_TOKEN
+echo "Lab purgé. vault.sh régénérera vault-key.txt (le committer si c'est l'artefact de référence)."
