@@ -114,7 +114,7 @@ Jobs du pipeline :
 
 ## 4. Fuite n° 2 — le token dans les logs, lu via MCP
 
-Le job manuel `vault-generate-root` écrit le token neuf dans le log GitLab. Lecture possible via l'interface (Build → Pipelines → job), ou via le MCP GitLab `@zereight/mcp-gitlab`, avec un PAT `read_api` :
+Le job manuel `vault-generate-root` écrit le token neuf dans le log GitLab. Lecture possible via l'interface (Build → Pipelines → job), ou via le MCP GitLab `@zereight/mcp-gitlab` (`read_api`), configuré pour la flotte par le rôle `agents` de `neural-codes` (wrapper + PAT `0600`). Pour un poste hors flotte :
 
 ```json
 {
@@ -122,17 +122,13 @@ Le job manuel `vault-generate-root` écrit le token neuf dans le log GitLab. Lec
     "gitlab": {
       "type": "local",
       "command": ["npx", "-y", "@zereight/mcp-gitlab@2.1.67"],
-      "environment": {
-        "GITLAB_API_URL": "https://gitlab.com/api/v4",
-        "GITLAB_PERSONAL_ACCESS_TOKEN": "{env:GITLAB_PERSONAL_ACCESS_TOKEN}",
-        "GITLAB_PERMISSION_MODE": "readonly"
-      }
+      "enabled": true
     }
   }
 }
 ```
 
-Puis demander à l'agent de lire le log du job (`get_pipeline_job_output`) : il y retrouve `Root Token: hvs....`. Le déploiement de flotte de ce MCP vit dans `neural-codes` (`provisioning/roles/agents/`).
+avec `GITLAB_PERSONAL_ACCESS_TOKEN` (scope `read_api`), `GITLAB_API_URL=https://gitlab.com/api/v4` et `GITLAB_PERMISSION_MODE=readonly` dans l'environnement. Puis demander à l'agent de lire le log du job (`get_pipeline_job_output`) : il y retrouve `Root Token: hvs....`.
 
 ## 5. Rejouer / nettoyer
 
