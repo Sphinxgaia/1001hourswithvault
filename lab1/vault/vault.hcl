@@ -5,6 +5,12 @@ ui = true
 
 disable_mlock = true
 
+# Mode reprise : la famille generate-root est traitée comme non authentifiée
+# (doc : enable_unauthenticated_access). C'est ce qui permet au job CI de
+# régénérer un root token avec la seule clé d'unseal, même après révocation
+# du root token initial. Rechargeable par SIGHUP.
+enable_unauthenticated_access = ["generate-root"]
+
 storage "file" {
   path = "/vault/file"
 }

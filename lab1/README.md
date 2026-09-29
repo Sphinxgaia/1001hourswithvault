@@ -62,7 +62,7 @@ docker build -t 1001lab/vault-ci:2.0.1 -f lab1/ci/Dockerfile .
 
 ### C. Runner GitLab local
 
-Dans le projet GitLab.com : **Settings → CI/CD → Runners → New project runner**, tag `local`. Puis :
+Dans le projet GitLab.com : **Settings → CI/CD → Runners → New project runner** — y renseigner le tag `local` et la description (le workflow d'enregistrement actuel réserve ces champs au serveur). Puis :
 
 ```bash
 docker run -d --name gitlab-runner --restart unless-stopped \
@@ -76,10 +76,12 @@ docker exec -it gitlab-runner gitlab-runner register \
   --executor docker \
   --docker-image alpine:3.21 \
   --docker-network-mode 1001lab \
-  --docker-volumes "$PWD/lab1/pgp/lab-secret.b64:/lab/pgp/lab-secret.b64:ro" \
-  --tag-list local \
-  --description "1001lab local"
+  --docker-pull-policy if-not-present \
+  --docker-allowed-pull-policies "always,if-not-present" \
+  --docker-volumes "$PWD/lab1/pgp/lab-secret.b64:/lab/pgp/lab-secret.b64:ro"
 ```
+
+Sans `--docker-allowed-pull-policies`, le runner refuse la politique `if-not-present` du job (l'image `1001lab/vault-ci:2.0.1` est locale, jamais poussée sur un registre).
 
 Le job tourne **sur le réseau `1001lab`** (il joint Vault sur `http://server01:8200`) et la clé privée lui est **montée en lecture seule** — elle n'est jamais poussée.
 
@@ -166,7 +168,7 @@ vault token lookup        # -> permission denied / bad token
 
 Dans GitLab : **Build → Pipelines → Run pipeline** (branche `main`), puis **jouer manuellement** le job `vault-generate-root`.
 
-Le job ne demande aucun token : il utilise seulement la clé d'unseal (déchiffrée par le runner avec la clé privée montée) et la procédure `vault operator generate-root`. Son log affiche :
+Le job ne demande aucun token : le `vault.hcl` du lab active le mode reprise (`enable_unauthenticated_access = ["generate-root"]`), la famille `generate-root` est donc non authentifiée. Le job utilise seulement la clé d'unseal (déchiffrée par le runner avec la clé privée montée) et la procédure `vault operator generate-root`. Son log affiche :
 
 ```
 Root Token: hvs....

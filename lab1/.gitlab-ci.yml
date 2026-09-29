@@ -56,5 +56,5 @@ vault-generate-root:
     - INIT=$(vault operator generate-root -init -format=json)
     - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
     - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
-    - ENCODED=$(vault operator generate-root -nonce="$NONCE" "$UNSEAL" -format=json | jq -r '.encoded_token')
+    - ENCODED=$(vault operator generate-root -nonce="$NONCE" -format=json "$UNSEAL" | jq -r '.encoded_token')
     - vault operator generate-root -decode="$ENCODED" -otp="$OTP"
