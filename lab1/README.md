@@ -1,0 +1,205 @@
+# Lab 1 — Deux fuites de root token
+
+Démo en deux temps autour d'un Vault local en Docker :
+
+1. **Fuite n° 1 — le dépôt public.** L'init du Vault écrit `lab1/vault/vault-key.txt` : la clé d'unseal **chiffrée par PGP** et le **root token en clair**. Ce fichier est committé volontairement. On le retrouve dans le dépôt, on se connecte avec, on l'utilise, puis on le révoque.
+2. **Fuite n° 2 — les logs GitLab.** Une fois le token révoqué, le job `vault-generate-root` régénère un root token avec la procédure Vault (`vault operator generate-root`, qui ne demande que la clé d'unseal) ; le token neuf s'affiche en clair dans le log du job et se récupère via le MCP GitLab (ou l'interface). On se reconnecte avec.
+
+> ⚠️ **Avertissements** — le root token committé et la clé PGP publique ne contrôlent qu'un Vault local éphémère, sur cette machine. Ne jamais reproduire ces pratiques sur un Vault réel. La **clé privée** PGP du lab (`pgp/lab-secret.b64`) n'est **pas** dans le dépôt : elle reste chez l'opérateur et n'est montée que dans le runner local.
+
+## Arborescence du lab
+
+| Chemin (dans `lab1/`) | Rôle |
+|---|---|
+| `vault/` | scripts Docker : `vault.sh` (init PGP + unseal + login), `vault-connect.sh`, `vault-restart.sh`, `cleanup-install.sh`, `vault-key.txt` (artefact de fuite n° 1) |
+| `pgp/` | clé PGP du lab : `lab-pub.b64` committée, `lab-secret.b64` locale (gitignorée) |
+| `policies/templates/` | policies HCL appliquées par le job (`secretreader`, `secretwriter`, `operator`) |
+| `ci/Dockerfile` | image de job (`vault` 2.0.1 + gnupg + jq) |
+| `.gitlab-ci.yml` | pipeline du lab (`vault-configure`, `vault-generate-root`), inclus par le `.gitlab-ci.yml` racine |
+
+## Prérequis
+
+- Docker, CLI `vault` 2.0.1 (`lab1/vault/install-cli.sh`), `gpg` 2.4+ ;
+- un projet GitLab.com privé, le conteneur `gitlab/gitlab-runner` ;
+- pour l'étape MCP : un PAT GitLab scope `read_api`.
+
+Les commandes se lancent depuis la racine du dépôt (`1001hourswithvault`).
+
+---
+
+## Mise en place (une seule fois)
+
+### A. Clé PGP du lab
+
+Déjà committée (`lab1/pgp/lab-pub.b64`, empreinte `DABE82446C2F55FEF76EBD6430A215E3012F5379`). Pour la régénérer :
+
+```bash
+mkdir -p lab1/pgp/gnupg && chmod 700 lab1/pgp/gnupg
+GNUPGHOME="$PWD/lab1/pgp/gnupg" gpg --batch --generate-key <<'EOF'
+%no-protection
+Key-Type: RSA
+Key-Length: 3072
+Subkey-Type: RSA
+Subkey-Length: 3072
+Subkey-Usage: encrypt
+Name-Real: 1001lab
+Name-Comment: temporary lab key (no passphrase)
+Name-Email: 1001lab@localhost
+Expire-Date: 0
+%commit
+EOF
+export GNUPGHOME="$PWD/lab1/pgp/gnupg"
+gpg --export | base64 -w0 > lab1/pgp/lab-pub.b64
+gpg --export-secret-keys | base64 -w0 > lab1/pgp/lab-secret.b64
+chmod 600 lab1/pgp/lab-secret.b64
+```
+
+### B. Image de job
+
+```bash
+docker build -t 1001lab/vault-ci:2.0.1 -f lab1/ci/Dockerfile .
+```
+
+### C. Runner GitLab local
+
+Dans le projet GitLab.com : **Settings → CI/CD → Runners → New project runner**, tag `local`. Puis :
+
+```bash
+docker run -d --name gitlab-runner --restart unless-stopped \
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  gitlab/gitlab-runner:latest
+
+docker exec -it gitlab-runner gitlab-runner register \
+  --url https://gitlab.com \
+  --token "$RUNNER_TOKEN" \
+  --executor docker \
+  --docker-image alpine:3.21 \
+  --docker-network-mode 1001lab \
+  --docker-volumes "$PWD/lab1/pgp/lab-secret.b64:/lab/pgp/lab-secret.b64:ro" \
+  --tag-list local \
+  --description "1001lab local"
+```
+
+Le job tourne **sur le réseau `1001lab`** (il joint Vault sur `http://server01:8200`) et la clé privée lui est **montée en lecture seule** — elle n'est jamais poussée.
+
+### D. MCP GitLab (pour l'étape 7)
+
+Le MCP est configuré pour la flotte par le rôle `agents` de `neural-codes` (wrapper + PAT `0600`). Pour un poste hors flotte :
+
+```json
+{
+  "mcp": {
+    "gitlab": {
+      "type": "local",
+      "command": ["npx", "-y", "@zereight/mcp-gitlab@2.1.67"],
+      "enabled": true
+    }
+  }
+}
+```
+
+avec `GITLAB_PERSONAL_ACCESS_TOKEN` (scope `read_api`), `GITLAB_API_URL=https://gitlab.com/api/v4` et `GITLAB_PERMISSION_MODE=readonly` dans l'environnement.
+
+### E. Configurer le Vault par la CI (à faire avant de révoquer)
+
+Le job `vault-configure` se connecte avec le root token du dépôt : il ne fonctionne que **tant que ce token n'est pas révoqué**. Lancez-le une fois (pipeline sur `main`) avant la démo, ou gardez-le pour la première partie.
+
+---
+
+## Déroulé de la démo
+
+### 1. Démarrer et initialiser le Vault
+
+```bash
+lab1/vault/cleanup-install.sh   # seulement si un état existe déjà
+lab1/vault/vault.sh
+```
+
+Le script démarre `server01` (port 8200) et `postgres` sur le réseau `1001lab`, initialise Vault avec une clé d'unseal chiffrée à la source (`-pgp-keys`), la déchiffre, unseal, se logue en root et active l'audit fichier.
+
+Résultat dans `lab1/vault/vault-key.txt` :
+
+```
+Unseal Key 1: wcDMA...            <- chiffrée par la clé publique du lab
+Initial Root Token: hvs....       <- en clair (fuite n° 1, assumée)
+```
+
+### 2. Montrer le Vault
+
+```bash
+vault status
+```
+
+Ouvrir l'interface : <http://127.0.0.1:8200/ui> (méthode **Token**, avec `hvs....` — ou laisser la session CLI).
+
+### 3. Fuite n° 1 — retrouver le root token et se connecter
+
+```bash
+grep 'Initial Root Token' lab1/vault/vault-key.txt
+vault login hvs.xxxxxxxx
+vault token lookup
+```
+
+Attendu : `token_policies ["root"]`, `display_name root`. Le token à droits avancés était dans le dépôt, à la vue de tous.
+
+### 4. L'utiliser
+
+```bash
+vault policy list
+vault audit list
+```
+
+### 5. Révoquer le root token
+
+```bash
+vault token revoke -self
+```
+
+Vérifier qu'il est bien mort :
+
+```bash
+vault token lookup        # -> permission denied / bad token
+```
+
+### 6. Fuite n° 2 — la CI régénère un root token
+
+Dans GitLab : **Build → Pipelines → Run pipeline** (branche `main`), puis **jouer manuellement** le job `vault-generate-root`.
+
+Le job ne demande aucun token : il utilise seulement la clé d'unseal (déchiffrée par le runner avec la clé privée montée) et la procédure `vault operator generate-root`. Son log affiche :
+
+```
+Root Token: hvs....
+```
+
+### 7. Retrouver le token via le MCP et se reconnecter
+
+Demander à l'agent (ou ouvrir le log du job) de lire la sortie du job — via le MCP `gitlab` et l'outil `get_pipeline_job_output` — puis :
+
+```bash
+vault login hvs.<nouveau-token>
+vault token lookup
+```
+
+Retour en root : la révocation du premier token n'a pas fermé la porte, la clé d'unseal suffit.
+
+### 8. Nettoyer
+
+```bash
+lab1/vault/cleanup-install.sh
+```
+
+---
+
+## Dépannage
+
+- **Vault scellé après un redémarrage** : `lab1/vault/vault-restart.sh` (relance les conteneurs + unseal + login) ou `lab1/vault/vault-connect.sh`.
+- **Le job ne trouve pas Vault** : le réseau `1001lab` doit exister et `server01` tourner avant le job ; vérifier `docker network inspect 1001lab`.
+- **`vault-configure` échoue après révocation** : normal, le token du dépôt est mort ; c'est l'objet de la démo.
+- **Le runner ne démarre pas le job** : vérifier le tag `local` et que l'URL du projet correspond.
+- **Nouvelle init** : `vault-key.txt` change ; le committer à nouveau pour garder l'artefact de fuite cohérent avec le Vault vivant.
+
+## Vérifications (traçabilité)
+
+- **2026-09-29** — `lab1/vault/vault.sh` exécuté : Vault 2.0.1 (`hashicorp/vault:2.0.1`), init `-pgp-keys`, unseal par déchiffrement PGP, login root, audit activé ; cycle `vault operator seal` → `lab1/vault/vault-connect.sh` → `Sealed false` + `policies [root]` vérifié. CLI hôte `vault` v2.0.1, `gpg` 2.4.8.
+- Pipeline GitLab et lecture MCP : **pas encore exécutés** (en attente de l'enregistrement du runner et du PAT).

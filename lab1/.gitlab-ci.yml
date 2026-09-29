@@ -1,0 +1,60 @@
+# Lab 1 — configuration du Vault local depuis GitLab CI (inclus par le
+# .gitlab-ci.yml racine).
+#
+# Prérequis :
+# - un runner GitLab local avec le tag `local`, attaché au réseau Docker
+#   `1001lab` où tourne le conteneur `server01` (voir README du lab) ;
+# - l'image de job `1001lab/vault-ci:2.0.1` construite localement
+#   (`docker build -t 1001lab/vault-ci:2.0.1 -f lab1/ci/Dockerfile .`) ;
+# - la clé privée PGP du lab montée en lecture seule par le runner sur
+#   /lab/pgp/lab-secret.b64 (elle n'est pas dans le dépôt, voir README du lab).
+
+stages:
+  - configure
+  - leak
+
+variables:
+  VAULT_ADDR: "http://server01:8200"
+  LAB_SECRET_KEY: "/lab/pgp/lab-secret.b64"
+
+default:
+  tags:
+    - local
+  image:
+    name: 1001lab/vault-ci:2.0.1
+    pull_policy: if-not-present
+  before_script:
+    # Import de la clé privée (montée par le runner) et unseal : aucune
+    # authentification n'est nécessaire ici, donc `vault-generate-root`
+    # fonctionne même après la révocation du root token committé.
+    - base64 -d "$LAB_SECRET_KEY" | gpg --batch --import
+    - ENC=$(grep 'Key 1:' lab1/vault/vault-key.txt | awk '{print $NF}')
+    - UNSEAL=$(printf '%s' "$ENC" | base64 -d | gpg -dq)
+    - vault operator unseal "$UNSEAL" || true
+
+# Configure le Vault avec le root token committé dans le dépôt (fuite n° 1).
+# À lancer AVANT de révoquer le token : après révocation, ce job ne peut plus
+# se connecter (c'est le but de la démo).
+vault-configure:
+  stage: configure
+  script:
+    - vault login "$(grep 'Initial Root Token:' lab1/vault/vault-key.txt | awk '{print $NF}')"
+    - vault policy write secretreader lab1/policies/templates/policy-secretreader.hcl
+    - vault policy write secretwriter lab1/policies/templates/policy-secretwriter.hcl
+    - vault policy write operator lab1/policies/templates/policy-operator.hcl
+    - vault policy list
+    - vault policy read secretreader
+
+# Fuite n° 2 : régénère un root token avec la procédure Vault
+# (`vault operator generate-root`, clé d'unseal uniquement, aucun token requis)
+# ; le token neuf s'affiche en clair dans le log du job, lisible depuis
+# gitlab.com (interface ou MCP GitLab).
+vault-generate-root:
+  stage: leak
+  when: manual
+  script:
+    - INIT=$(vault operator generate-root -init -format=json)
+    - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
+    - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
+    - ENCODED=$(vault operator generate-root -nonce="$NONCE" "$UNSEAL" -format=json | jq -r '.encoded_token')
+    - vault operator generate-root -decode="$ENCODED" -otp="$OTP"
