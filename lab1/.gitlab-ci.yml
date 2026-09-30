@@ -59,12 +59,6 @@ vault-revoke:
   stage: leak
   when: manual
   script:
-    - INIT=$(vault operator generate-root -init -format=json)
-    - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
-    - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
-    - ENCODED=$(vault operator generate-root -nonce="$NONCE" -format=json "$UNSEAL" | jq -r '.encoded_token')
-    - ROOT_TOKEN=$(vault operator generate-root -decode="$ENCODED" -otp="$OTP" | awk '{print $NF}')
-    - printf '%s\n' "$ROOT_TOKEN" > ~/.vault_token
     - vault login "$(cat ~/.vault_token)"
     - vault token lookup
     - vault token revoke -self
