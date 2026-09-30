@@ -25,31 +25,37 @@ default:
     pull_policy: if-not-present
   before_script:
     # Import de la clé privée (montée par le runner) et unseal : aucune
-    # authentification n'est nécessaire ici, donc `vault-generate-root`
-    # fonctionne même après la révocation du root token committé.
+    # authentification n'est nécessaire ici, donc les jobs `generate-root`
+    # fonctionnent même après la révocation du root token committé.
     - base64 -d "$LAB_SECRET_KEY" | gpg --batch --import
     - ENC=$(grep 'Key 1:' lab1/vault/vault-key.txt | awk '{print $NF}')
     - UNSEAL=$(printf '%s' "$ENC" | base64 -d | gpg -dq)
     - vault operator unseal "$UNSEAL" || true
 
-# Configure le Vault avec le root token committé dans le dépôt (fuite n° 1).
-# À lancer AVANT de révoquer le token : après révocation, ce job ne peut plus
-# se connecter (c'est le but de la démo).
+# Configure le Vault avec un root token neuf, régénéré par `generate-root`
+# (la clé d'unseal suffit) : le job ne dépend plus du token committé et peut
+# donc tourner même après la révocation de la fuite n° 1. La session est
+# simulée : le token est laissé dans ~/.vault_token, puis le CLI s'y connecte.
 vault-configure:
   stage: configure
   script:
-    - vault login "$(grep 'Initial Root Token:' lab1/vault/vault-key.txt | awk '{print $NF}')"
+    - INIT=$(vault operator generate-root -init -format=json)
+    - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
+    - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
+    - ENCODED=$(vault operator generate-root -nonce="$NONCE" -format=json "$UNSEAL" | jq -r '.encoded_token')
+    - ROOT_TOKEN=$(vault operator generate-root -decode="$ENCODED" -otp="$OTP" | awk '{print $NF}')
+    - printf '%s\n' "$ROOT_TOKEN" > ~/.vault_token
+    - vault login "$(cat ~/.vault_token)"
     - vault policy write secretreader lab1/policies/templates/policy-secretreader.hcl
     - vault policy write secretwriter lab1/policies/templates/policy-secretwriter.hcl
     - vault policy write operator lab1/policies/templates/policy-operator.hcl
     - vault policy list
     - vault policy read secretreader
 
-# Fuite n° 2 : régénère un root token avec la procédure Vault
-# (`vault operator generate-root`, clé d'unseal uniquement, aucun token requis)
-# ; le token neuf s'affiche en clair dans le log du job, lisible depuis
-# gitlab.com (interface ou MCP GitLab).
-vault-generate-root:
+# Révocation d'une session root : job autonome — il régénère un root token
+# (même procédure), simule une session dans ~/.vault_token, contrôle le token
+# avec `vault token lookup` puis le révoque avec `vault token revoke -self`.
+vault-revoke:
   stage: leak
   when: manual
   script:
@@ -57,4 +63,8 @@ vault-generate-root:
     - OTP=$(printf '%s' "$INIT" | jq -r '.otp')
     - NONCE=$(printf '%s' "$INIT" | jq -r '.nonce')
     - ENCODED=$(vault operator generate-root -nonce="$NONCE" -format=json "$UNSEAL" | jq -r '.encoded_token')
-    - vault operator generate-root -decode="$ENCODED" -otp="$OTP"
+    - ROOT_TOKEN=$(vault operator generate-root -decode="$ENCODED" -otp="$OTP" | awk '{print $NF}')
+    - printf '%s\n' "$ROOT_TOKEN" > ~/.vault_token
+    - vault login "$(cat ~/.vault_token)"
+    - vault token lookup
+    - vault token revoke -self

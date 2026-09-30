@@ -103,9 +103,9 @@ Le MCP est configuré pour la flotte par le rôle `agents` de `neural-codes` (wr
 
 avec `GITLAB_PERSONAL_ACCESS_TOKEN` (scope `read_api`), `GITLAB_API_URL=https://gitlab.com/api/v4`, `GITLAB_PERMISSION_MODE=readonly` et `GITLAB_TOOLSETS=pipelines` (le serveur expose un socle d'outils et active les outils de pipeline par toolset) dans l'environnement.
 
-### E. Configurer le Vault par la CI (à faire avant de révoquer)
+### E. Configurer le Vault par la CI
 
-Le job `vault-configure` se connecte avec le root token du dépôt : il ne fonctionne que **tant que ce token n'est pas révoqué**. Lancez-le une fois (pipeline sur `main`) avant la démo, ou gardez-le pour la première partie.
+Le job `vault-configure` régénère lui-même un root token avec `generate-root` (la clé d'unseal suffit) et simule une session en l'écrivant dans `~/.vault_token` avant de s'y connecter : il ne dépend plus du token committé et peut donc tourner **à tout moment**, même après la révocation de la fuite n° 1. Lancez-le une fois (pipeline sur `main`) avant la démo, ou rejouez-le après.
 
 ---
 
@@ -168,10 +168,10 @@ vault token lookup        # -> permission denied / bad token
 
 Dans GitLab : **Build → Pipelines → Run pipeline** (branche `main`), puis **jouer manuellement** le job `vault-generate-root`.
 
-Le job ne demande aucun token : le `vault.hcl` du lab active le mode reprise (`enable_unauthenticated_access = ["generate-root"]`), la famille `generate-root` est donc non authentifiée. Le job utilise seulement la clé d'unseal (déchiffrée par le runner avec la clé privée montée) et la procédure `vault operator generate-root`. Son log affiche :
+Le job ne demande aucun token : le `vault.hcl` du lab active le mode reprise (`enable_unauthenticated_access = ["generate-root"]`), la famille `generate-root` est donc non authentifiée. Le job utilise seulement la clé d'unseal (déchiffrée par le runner avec la clé privée montée) et la procédure `vault operator generate-root`. Son log affiche le token neuf en clair :
 
 ```
-Root Token: hvs....
+hvs....
 ```
 
 ### 7. Retrouver le token via le MCP et se reconnecter
@@ -185,7 +185,17 @@ vault token lookup
 
 Retour en root : la révocation du premier token n'a pas fermé la porte, la clé d'unseal suffit.
 
-### 8. Nettoyer
+### 8. Révoquer une session root régénérée
+
+Toujours dans **Build → Pipelines**, **jouer manuellement** le job `vault-revoke` : il est autonome — il régénère un root token (même procédure), simule une session en l'écrivant dans `~/.vault_token`, contrôle le token puis le révoque.
+
+```bash
+vault token lookup          # display_name root, policies [root]
+vault token revoke -self
+vault token lookup          # -> Error looking up token (révoqué)
+```
+
+### 9. Nettoyer
 
 ```bash
 lab1/vault/cleanup-install.sh
@@ -197,7 +207,8 @@ lab1/vault/cleanup-install.sh
 
 - **Vault scellé après un redémarrage** : `lab1/vault/vault-restart.sh` (relance les conteneurs + unseal + login) ou `lab1/vault/vault-connect.sh`.
 - **Le job ne trouve pas Vault** : le réseau `1001lab` doit exister et `server01` tourner avant le job ; vérifier `docker network inspect 1001lab`.
-- **`vault-configure` échoue après révocation** : normal, le token du dépôt est mort ; c'est l'objet de la démo.
+- **`vault-configure` échoue** : vérifier que la clé d'unseal se déchiffre (clé privée PGP montée) et que `server01` tourne ; le job ne dépend plus du token committé.
+- **`root generation already in progress`** : un essai `generate-root` précédent est resté en suspens (job interrompu) ; l'annuler avec `vault operator generate-root -cancel` (famille non authentifiée dans le lab).
 - **Le runner ne démarre pas le job** : vérifier le tag `local` et que l'URL du projet correspond.
 - **Nouvelle init** : `vault-key.txt` change ; le committer à nouveau pour garder l'artefact de fuite cohérent avec le Vault vivant.
 
@@ -206,3 +217,7 @@ lab1/vault/cleanup-install.sh
 - **2026-09-29** — `lab1/vault/vault.sh` exécuté : Vault 2.0.1 (`hashicorp/vault:2.0.1`), init `-pgp-keys`, unseal par déchiffrement PGP, login root, audit activé ; cycle `vault operator seal` → `lab1/vault/vault-connect.sh` → `Sealed false` + `policies [root]` vérifié. CLI hôte `vault` v2.0.1, `gpg` 2.4.8.
 - **2026-09-29** — pipeline exécuté sur le runner local (gitlab-runner 19.3.3, image `1001lab/vault-ci:2.0.1`, réseau `1001lab`) : `vault-configure` en succès, `vault policy list` montre `secretreader`, `secretwriter`, `operator` ; `vault-generate-root` en succès, son log contient `Root Token: hvs....` ; ce token a permis `vault login` (policies `[root]`) puis a été révoqué. Lecture MCP vérifiée : `@zereight/mcp-gitlab` 2.1.67 en stdio (toolset `pipelines`), `get_pipeline_job_output` renvoie le log du job et le token `hvs.` qu'il contient.
 - Mode reprise activé dans `lab1/vault/vault.hcl` (`enable_unauthenticated_access = ["generate-root"]`) : le job régénère un root token avec la seule clé d'unseal, sans aucun token ; vérifié par un `vault operator generate-root -init` sans token (OTP + nonce reçus).
+- **2026-09-30** — nouveaux jobs `vault-configure` et `vault-revoke` rejoués localement contre `server01` (CLI hôte `vault` v2.0.1, `jq` 1.8.1, `gpg` 2.4.8), commandes copiées du YAML :
+  - `vault-configure` : `generate-root` complet, sortie brute de `-decode` = `hvs.…` (28 caractères), écrite dans `~/.vault_token` (29 octets) ; `vault login` → `display_name root`, `policies [root]` ; policies `secretreader`, `secretwriter`, `operator` écrites puis listées ; token de test révoqué en fin de vérification.
+  - `vault-revoke` : même procédure, `vault token lookup` → `policies [root]`, `vault token revoke -self`, puis `vault token lookup` → `Error looking up token` (révocation confirmée).
+  - `~/.vault-token` sauvegardé/restauré, `~/.vault_token` supprimé, `vault status` → `Sealed false`. Le pipeline GitLab n'a pas été relancé (aucun push) : les jobs sont validés par ce rejeu local, à confirmer au prochain pipeline.
