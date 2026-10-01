@@ -1,0 +1,106 @@
+# Lab 3 — OpenBao (Raft) + namespaces derrière deux proxys nginx.
+#
+# Réseaux : OpenBao est le seul conteneur attaché aux trois réseaux, avec une
+# IP statique par réseau ; chaque listener OpenBao est lié à cette IP (jamais
+# 0.0.0.0), donc injoignable depuis les autres réseaux.
+#   root-net    (172.28.1.0/24) : bao 172.28.1.10 + nginx1 → listener :8200
+#   admin-net   (172.28.2.0/24) : bao 172.28.2.10 + nginx2 → listener :8210
+#   rewrite-net (172.28.3.0/24) : bao 172.28.3.10 + nginx3 → listener :8220
+#
+# Aucun port n'est publié pour bao : l'API n'est joignable que via les
+# proxys. Le service `init` (one-shot) initialise, unseal et configure.
+
+name: bao-lab3
+
+services:
+
+  bao:
+    image: openbao/openbao:2.5.1
+    container_name: lab3-bao
+    hostname: bao
+    # Chargé depuis /openbao/config (défaut de l'image), et données sur
+    # /openbao/file : l'entrypoint y chown le volume pour l'utilisateur
+    # `openbao`, sous lequel le serveur s'exécute.
+    command: ["server"]
+    volumes:
+      - ./bao/config/bao.hcl:/openbao/config/lab3.hcl:ro
+      - bao-data:/openbao/file
+    networks:
+      root-net:
+        ipv4_address: 172.28.1.10
+      admin-net:
+        ipv4_address: 172.28.2.10
+      rewrite-net:
+        ipv4_address: 172.28.3.10
+    restart: unless-stopped
+
+  nginx1:
+    image: nginx:latest
+    container_name: lab3-nginx1
+    volumes:
+      - ./nginx/nginx1.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8081:80"
+    networks:
+      - root-net
+    depends_on:
+      - bao
+    restart: unless-stopped
+
+  nginx2:
+    image: nginx:latest
+    container_name: lab3-nginx2
+    volumes:
+      - ./nginx/nginx2.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8082:80"
+    networks:
+      - admin-net
+    depends_on:
+      - bao
+    restart: unless-stopped
+
+  nginx3:
+    image: nginx:latest
+    container_name: lab3-nginx3
+    volumes:
+      - ./nginx/nginx3.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8083:80"
+    networks:
+      - rewrite-net
+    depends_on:
+      - bao
+    restart: unless-stopped
+
+  init:
+    image: openbao/openbao:2.5.1
+    container_name: lab3-init
+    entrypoint: ["/bin/sh", "/init/init-bao.sh"]
+    environment:
+      BAO_ADDR: "http://172.28.1.10:8200"
+    volumes:
+      - ./bao/init:/init:ro
+      - ./runtime:/runtime
+    networks:
+      - root-net
+    depends_on:
+      - bao
+    restart: "no"
+
+networks:
+  root-net:
+    ipam:
+      config:
+        - subnet: 172.28.1.0/24
+  admin-net:
+    ipam:
+      config:
+        - subnet: 172.28.2.0/24
+  rewrite-net:
+    ipam:
+      config:
+        - subnet: 172.28.3.0/24
+
+volumes:
+  bao-data:

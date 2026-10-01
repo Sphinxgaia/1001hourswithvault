@@ -1,0 +1,40 @@
+---
+# Implementation of:
+# https://developer.hashicorp.com/vault/tutorials/standard-procedures/sop-restore
+- name: "Load secret dir"
+  include_vars:
+    dir: "{{ hs_vault_local_secret_dir }}"
+    ignore_unknown_extensions: true
+  no_log: true
+
+- name: "Gather in-cluster role fact"
+  import_tasks:
+    file: "{{ role_path }}/tasks/__imports/__gather_leader_fact.yml"
+
+- name: Create vault home and data directories
+  file:
+    path: "{{ _current_dir }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: 0700
+  loop:
+    - "{{ __hs_vault_home_dir }}/snapshots/duplicity/"
+  loop_control:
+    loop_var: _current_dir
+
+- name: "Synchronize datastore"  # noqa: no-same-owner
+  copy:
+    src: "{{ hs_workspace_local_backup_dir }}/"
+    dest: "{{ __hs_vault_home_dir }}/snapshots/duplicity/"
+    owner: vault
+    group: vault
+    mode: 0640
+
+- name: "Vault restore"
+  shell:
+    cmd: >-
+      VAULT_ADDR="{{ hs_vault_geo_url }}" VAULT_TOKEN="{{ hs_vault_operator_token | default(vault_init_content.root_token, true) }}"
+      vault operator raft snapshot restore -force {{ __hs_vault_home_dir }}/snapshots/duplicity/{{ hs_vault_restore_name }}
+    executable: /usr/bin/bash
+

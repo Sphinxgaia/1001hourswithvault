@@ -4,6 +4,7 @@ lab1/vault/vault-init.txt
 bao/bao01*
 bao/bao-key.txt
 bao/bao-init.txt
+lab3/runtime/
 
 # Clé privée du lab — détenue par l'opérateur, jamais committée
 lab1/pgp/lab-secret.b64

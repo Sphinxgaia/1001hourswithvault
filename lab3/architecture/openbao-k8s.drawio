@@ -1,0 +1,65 @@
+<mxfile host="app.diagrams.net" agent="opencode" version="31.5.3">
+  <diagram id="openbao-k8s" name="OpenBao k8s">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="760" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="cl-b" value="Cluster B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=22;fontStyle=1;spacingTop=8;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="15" y="80" width="200" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="cl-b-k8s" value="Kubernetes" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=15;fontStyle=2;fontColor=#666666;" vertex="1" parent="cl-b">
+          <mxGeometry x="10" y="35" width="180" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="cl-b-apps" value="Apps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=20;" vertex="1" parent="cl-b">
+          <mxGeometry x="35" y="80" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cl-b-note" value="accès inter-cluster&#xa;uniquement" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=16;fontStyle=2;fontColor=#b85450;" vertex="1" parent="cl-b">
+          <mxGeometry x="10" y="170" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cl-main" value="Cluster Kubernetes — OpenBao" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=24;fontStyle=1;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="245" y="30" width="540" height="700" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ng1" value="&lt;b&gt;nginx1&lt;/b&gt;&lt;br&gt;Service LoadBalancer&lt;br&gt;proxy racine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=18;" vertex="1" parent="cl-main">
+          <mxGeometry x="30" y="90" width="210" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="np1" value="NetworkPolicy — ingress :&lt;br&gt;Cluster B seulement" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=16;fontStyle=2;fontColor=#b85450;" vertex="1" parent="cl-main">
+          <mxGeometry x="30" y="205" width="210" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ng2" value="&lt;b&gt;nginx2&lt;/b&gt;&lt;br&gt;Service ClusterIP&lt;br&gt;X-Vault-Namespace: admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=18;" vertex="1" parent="cl-main">
+          <mxGeometry x="30" y="340" width="210" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="np2" value="NetworkPolicy — ingress :&lt;br&gt;in-cluster seulement" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=16;fontStyle=2;fontColor=#b85450;" vertex="1" parent="cl-main">
+          <mxGeometry x="30" y="455" width="210" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="apps" value="Apps in-cluster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=20;" vertex="1" parent="cl-main">
+          <mxGeometry x="30" y="570" width="210" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bao" value="&lt;b&gt;OpenBao (Raft)&lt;/b&gt;&lt;br&gt;listeners 8200 / 8210&lt;br&gt;namespaces root + admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;verticalAlign=middle;" vertex="1" parent="cl-main">
+          <mxGeometry x="320" y="230" width="190" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="bao-storage" value="stockage Raft&#xa;volume persistant" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=15;fontStyle=2;fontColor=#666666;" vertex="1" parent="cl-main">
+          <mxGeometry x="320" y="445" width="190" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-b-ng1" value="inter-cluster" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#b85450;fontSize=16;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cl-b-apps" target="ng1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-apps-ng2" value="in-cluster" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=16;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="apps" target="ng2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ng1-bao" value=":8200 — racine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6c8ebf;fontSize=16;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ng1" target="bao">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ng2-bao" value=":8210 — admin" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6c8ebf;fontSize=16;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ng2" target="bao">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
